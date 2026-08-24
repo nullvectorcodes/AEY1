@@ -779,7 +779,7 @@ export default function App() {
 
                           {/* Plain-Language Layman Reason */}
                           <div className="p-3 bg-[#E6F6F2]/60 rounded-xl text-xs text-[#007A5E] font-medium border border-[#A3E4D4]/60">
-                            💡 <strong>Why sell this position now?</strong> Selling {rec.recommended_qty} shares locks in a {formatRupee(-rec.loss_booked)} loss, directly cutting the tax you owe on other profits by {formatRupee(rec.tax_saved)}.
+                            <strong>Why sell this position now?</strong> Selling {rec.recommended_qty} shares locks in a {formatRupee(-rec.loss_booked)} loss, directly cutting the tax you owe on other profits by {formatRupee(rec.tax_saved)}.
                           </div>
 
                           {/* Holding Period Progress Bar */}
@@ -851,7 +851,7 @@ export default function App() {
 
                           {/* Plain-Language Layman Reason */}
                           <div className="p-3 bg-[#E6F6F2]/60 rounded-xl text-xs text-[#007A5E] font-medium border border-[#A3E4D4]/60">
-                            💡 <strong>Why sell & repurchase this now?</strong> Books {formatRupee(rec.gain_booked)} profit completely tax-free under your ₹1.25L allowance, raising your buy price higher to protect future gains.
+                            <strong>Why sell & repurchase this now?</strong> Books {formatRupee(rec.gain_booked)} profit completely tax-free under your ₹1.25L allowance, raising your buy price higher to protect future gains.
                           </div>
 
                           <div className="bg-slate-50 rounded-xl p-3.5 grid grid-cols-2 gap-3 text-xs border border-slate-100 font-medium">
