@@ -91,16 +91,37 @@ class OpenPosition:
         }
 
 def _parse_date(val: Any) -> date:
+    if val is None:
+        raise ValueError("Cannot parse None as date")
     if isinstance(val, (datetime, pd.Timestamp)):
         return val.date()
     if isinstance(val, date):
         return val
     val_str = str(val).strip()
-    for fmt in ("%d-%m-%Y", "%Y-%m-%d", "%d/%m/%Y", "%Y/%m/%d", "%d-%b-%Y"):
+    if not val_str:
+        raise ValueError("Cannot parse empty string as date")
+        
+    # Strip time component if separated by space or 'T'
+    if " " in val_str:
+        date_part = val_str.split(" ")[0].strip()
+    elif "T" in val_str:
+        date_part = val_str.split("T")[0].strip()
+    else:
+        date_part = val_str
+
+    for fmt in ("%d-%m-%Y", "%Y-%m-%d", "%d/%m/%Y", "%Y/%m/%d", "%d-%b-%Y", "%d-%B-%Y", "%d.%m.%Y", "%Y.%m.%d"):
+        try:
+            return datetime.strptime(date_part, fmt).date()
+        except ValueError:
+            pass
+
+    # Fallback to full string parsing
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%d-%m-%Y %H:%M:%S", "%d/%m/%Y %H:%M:%S"):
         try:
             return datetime.strptime(val_str, fmt).date()
         except ValueError:
             pass
+
     raise ValueError(f"Unable to parse date string: '{val}'")
 
 def _find_header_row(raw_rows: List[List[Any]], sheet_name: str = "") -> Tuple[int, List[str]]:

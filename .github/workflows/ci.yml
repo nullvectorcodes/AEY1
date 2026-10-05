@@ -1,0 +1,64 @@
+name: Production CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  python-test-suite:
+    name: Python Engine Tests & Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Execute Pytest Suite (49 Tests)
+        run: |
+          PYTHONPATH=. pytest tests/test_tax_engine.py -v
+
+      - name: Execute Worked Example CLI
+        run: |
+          PYTHONPATH=. python worked_example.py
+
+      - name: Execute Benchmark Suite
+        run: |
+          PYTHONPATH=. python benchmark_test.py
+
+  frontend-build-lint:
+    name: Web UI Lint & Production Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web_ui
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: web_ui/package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Linter (oxlint)
+        run: npm run lint
+
+      - name: Build Web Application Bundle
+        run: npm run build

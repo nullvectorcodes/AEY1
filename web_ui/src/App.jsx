@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
-  FileSpreadsheet, RefreshCw, ShieldCheck, 
-  TrendingUp, TrendingDown, CheckCircle2, Info, 
+  ShieldCheck, 
+  CheckCircle2, Info, 
   AlertCircle, XCircle, Clock, LayoutDashboard, Zap, FileText, 
   ArrowUpRight, ArrowDownRight, UploadCloud, Search,
   PanelLeftClose, PanelLeftOpen, Calculator, RotateCcw,
@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { 
   formatRupee, parseSingleBrokerStatement, consolidateMultipleStatements, computeTax, 
-  generateHarvestingRecommendations, STCG_RATE, LTCG_RATE, LTCG_EXEMPTION_LIMIT 
+  generateHarvestingRecommendations, LTCG_EXEMPTION_LIMIT 
 } from './tax_engine_js';
 
 // Plain-Language Tooltip Terms Definition

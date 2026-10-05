@@ -128,6 +128,15 @@ class HarvestingEngine:
                     net_benefit=net_benefit,
                     reentry_advice="Sell by 31-March, repurchase after T+1 or T+2 to avoid intraday reclassification"
                 ))
+                # Decrement remaining taxable gains so subsequent positions don't over-harvest
+                if remaining_taxable_stcg > 0:
+                    stcg_offset = min(loss_to_book, remaining_taxable_stcg)
+                    remaining_taxable_stcg -= stcg_offset
+                    leftover = loss_to_book - stcg_offset
+                    if leftover > 0 and remaining_taxable_ltcg > 0:
+                        remaining_taxable_ltcg -= min(leftover, remaining_taxable_ltcg)
+                elif remaining_taxable_ltcg > 0:
+                    remaining_taxable_ltcg -= min(loss_to_book, remaining_taxable_ltcg)
 
         # 2. Process LTCG losses (can offset LTCG @ 12.5% only)
         for pos in ltcg_loss_positions:
@@ -155,6 +164,7 @@ class HarvestingEngine:
                         net_benefit=net_benefit,
                         reentry_advice="Sell by 31-March, repurchase after T+1 or T+2 to avoid intraday reclassification"
                     ))
+                    remaining_taxable_ltcg -= min(loss_to_book, remaining_taxable_ltcg)
 
         # Sort recommendations by net_benefit descending
         recommendations.sort(key=lambda r: r.net_benefit, reverse=True)

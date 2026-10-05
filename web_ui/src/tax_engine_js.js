@@ -289,9 +289,9 @@ export function parseSingleBrokerStatement(arrayBuffer, fileName) {
             holding_days: holdingDays,
             is_ltcg: isLtcg
           });
-        } catch (e) {}
+        } catch {}
       }
-    } catch (e) {}
+    } catch {}
   }
 
   const minDate = new Date(Math.min(...trades.map(t => t.buy_date.getTime())));
