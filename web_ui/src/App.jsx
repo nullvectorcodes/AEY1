@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import confetti from 'canvas-confetti';
 import { 
   ShieldCheck, 
   CheckCircle2, Info, 
@@ -6,11 +7,15 @@ import {
   ArrowUpRight, ArrowDownRight, UploadCloud, Search,
   PanelLeftClose, PanelLeftOpen, Calculator, RotateCcw,
   Trash2, Plus, Layers, Filter, AlertTriangle, HelpCircle,
-  Sparkles
+  Sparkles, TrendingDown, Download, Scale, Award, Check, ExternalLink,
+  ChevronRight, BarChart3
 } from 'lucide-react';
 import { 
   formatRupee, parseSingleBrokerStatement, consolidateMultipleStatements, computeTax, 
-  generateHarvestingRecommendations, LTCG_EXEMPTION_LIMIT 
+  generateHarvestingRecommendations, LTCG_EXEMPTION_LIMIT,
+  computeModelTaxSavings, BENCHMARK_PERSONAS, PANELIST_MOCK_DATA,
+  PANELIST_MIXED_CRYPTO_MOCK_DATA, PANELIST_CRYPTO_ONLY_MOCK_DATA,
+  VDA_CRYPTO_RATE, VDA_TDS_RATE
 } from './tax_engine_js';
 
 // Plain-Language Tooltip Terms Definition
@@ -21,7 +26,9 @@ const TAX_EXPLANATIONS = {
   EXEMPTION_HEADROOM: "How much more long-term profit (LTCG) you can book before 31-March at 0% tax before any tax liability kicks in.",
   SET_OFF: "Income Tax rules allowing you to subtract short-term losses from gains to reduce your overall taxable income.",
   INTRADAY: "Profits or losses from same-day buying and selling. Treated as speculative business income and taxed at your regular income tax slab rate.",
-  HARVESTING: "Strategically selling specific shares before 31-March to lock in losses or utilize tax-free limits, reducing your tax bill."
+  HARVESTING: "Strategically selling specific shares before 31-March to lock in losses or utilize tax-free limits, reducing your tax bill.",
+  VDA_CRYPTO: "Virtual Digital Assets (Crypto / NFT) are governed by Section 115BBH. Taxed at a flat 30% (+4% cess). Crucially, under Section 115BBH(2)(b), crypto losses cannot offset any gains or carry forward. Section 194S 1% TDS is claimed as tax credit.",
+  TDS_194S: "1% Tax Deducted at Source by crypto exchanges on sale considerations. AEY automatically credits this against your final tax payable."
 };
 
 const SAMPLE_TRADES_ZERODHA = [
@@ -74,6 +81,8 @@ export default function App() {
   const [harvestTab, setHarvestTab] = useState("loss_harvesting");
   const [filterType, setFilterType] = useState("ALL");
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedPersonaId, setSelectedPersonaId] = useState("live");
+  const [savingsSuccessMsg, setSavingsSuccessMsg] = useState(null);
 
   // Numerical What-If State
   const [simStclInput, setSimStclInput] = useState("");
@@ -100,6 +109,9 @@ export default function App() {
   // Core Tax & Harvesting Computations
   const taxResult = computeTax(activeTrades);
   const harvesting = generateHarvestingRecommendations(taxResult, activePositions);
+
+  // Model Tax Savings & Comparative Benchmark Engine
+  const modelSavings = computeModelTaxSavings(activeTrades, activePositions, harvesting);
 
   // Simulated Tax Calculation
   const simTrades = [
@@ -176,12 +188,56 @@ export default function App() {
     setSimLtclInput("");
   };
 
+  const loadPanelistDemoData = () => {
+    setIsDemoData(false);
+    setUserFiles(PANELIST_MOCK_DATA);
+    setBrokerFilter("ALL");
+    setUploadError(null);
+    setSimStclInput("");
+    setSimLtclInput("");
+    setSelectedPersonaId("live");
+    setSavingsSuccessMsg("Panelist Demonstration Dataset Loaded: Multi-broker equity trades, pre-2018 grandfathered shares, and open positions ready for tax-loss harvesting!");
+    confetti({
+      particleCount: 80,
+      spread: 70,
+      origin: { y: 0.6 }
+    });
+    setTimeout(() => setSavingsSuccessMsg(null), 6000);
+  };
+
+  const loadMixedCryptoDemoData = () => {
+    setIsDemoData(false);
+    setUserFiles(PANELIST_MIXED_CRYPTO_MOCK_DATA);
+    setBrokerFilter("ALL");
+    setUploadError(null);
+    setSimStclInput("");
+    setSimLtclInput("");
+    setSelectedPersonaId("persona_5");
+    setSavingsSuccessMsg("🪙 Mixed Crypto & Equity Demonstration Loaded: Enforcing Section 115BBH isolation (BTC/SOL gains taxed, ETH loss set-off disallowed), Section 194S TDS credited, and Equity harvesting optimized!");
+    confetti({
+      particleCount: 100,
+      spread: 80,
+      origin: { y: 0.6 }
+    });
+    setTimeout(() => setSavingsSuccessMsg(null), 7000);
+  };
+
+  const handleDownloadMockCsv = (fileName) => {
+    const link = document.createElement('a');
+    link.href = `/mock_data/${fileName}`;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const filteredAudit = taxResult.auditTrail.filter(item => {
     const matchesSearch = item.stock_name.toLowerCase().includes(searchTerm.toLowerCase()) || item.isin.toLowerCase().includes(searchTerm.toLowerCase());
     if (filterType === "ALL") return matchesSearch;
     if (filterType === "STCG") return matchesSearch && item.classified_type === "STCG";
     if (filterType === "LTCG") return matchesSearch && item.classified_type === "LTCG";
     if (filterType === "INTRADAY") return matchesSearch && item.classified_type.includes("Speculative");
+    if (filterType === "CRYPTO") return matchesSearch && (item.is_crypto || item.classified_type.includes("VDA") || item.classified_type.includes("Crypto"));
     return matchesSearch;
   });
 
@@ -204,6 +260,10 @@ export default function App() {
       } else {
         storyParts.push(`Your long-term profits were ${formatRupee(taxResult.netLtcgBeforeSetoff)}. After subtracting your ₹1.25 lakh tax-free allowance, you are taxed on ${formatRupee(taxResult.taxableLtcg)} at 12.5%.`);
       }
+    }
+
+    if (taxResult.hasCrypto) {
+      storyParts.push(`Under Section 115BBH, your ${formatRupee(taxResult.grossCryptoGains)} crypto profits (BTC & SOL) are taxed at flat 30% + 4% cess (${formatRupee(taxResult.cryptoGrossTax)}). ${formatRupee(taxResult.cryptoLossDisallowed)} in crypto losses (ETH) were legally isolated from offsetting gains (shielding you from Section 143(1)(a) defect notices and 200% Section 270A penalties), and ${formatRupee(taxResult.cryptoTdsCredits)} in Section 194S TDS credits were recovered.`);
     }
 
     if (taxResult.totalTaxPayable === 0) {
@@ -260,6 +320,25 @@ export default function App() {
             >
               <LayoutDashboard className="w-4 h-4 shrink-0" />
               {!sidebarCollapsed && <span className="truncate">Consolidated Overview</span>}
+            </button>
+
+            <button
+              onClick={() => setNavSection("benchmark")}
+              className={`w-full flex items-center ${sidebarCollapsed ? "justify-center px-0" : "justify-between px-3.5"} py-2.5 rounded-xl text-xs font-bold transition ${
+                navSection === "benchmark" 
+                  ? "bg-[#E6F6F2] text-[#00A37D]" 
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              }`}
+            >
+              <div className="flex items-center gap-3 truncate">
+                <Scale className="w-4 h-4 shrink-0" />
+                {!sidebarCollapsed && <span className="truncate">Model Savings & Benchmark</span>}
+              </div>
+              {!sidebarCollapsed && (
+                <span className="bg-[#00A37D] text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded-full shrink-0">
+                  {modelSavings.pctSavedVsBaseline > 0 ? `${modelSavings.pctSavedVsBaseline.toFixed(0)}% Saved` : "Audit"}
+                </span>
+              )}
             </button>
 
             <button
@@ -498,6 +577,113 @@ export default function App() {
                   </p>
                 </div>
 
+                {/* AEY MODEL TAX SAVINGS SPOTLIGHT CARD */}
+                <div className="apple-card p-6 bg-gradient-to-br from-slate-900 via-slate-900 to-[#042f24] text-white rounded-2xl shadow-lg border border-emerald-900/40 space-y-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
+                          <Scale className="w-3 h-3 text-[#00A37D]" /> AEY Model Tax Advantage
+                        </span>
+                        <span className="text-xs text-slate-400">Finance (No. 2) Act 2024</span>
+                      </div>
+                      <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">
+                        How Much Tax Are You Saving With Our Model vs. Paying Otherwise?
+                      </h3>
+                    </div>
+
+                    <button 
+                      onClick={() => setNavSection("benchmark")}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-[#00A37D] hover:bg-[#008767] text-white transition shadow-sm shrink-0"
+                    >
+                      <span>Full Benchmark Audit</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* 3 Pillars Comparison */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Column 1: Otherwise / Siloed */}
+                    <div className="p-4 rounded-xl bg-slate-800/80 border border-slate-700/80 space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">1. Paying Otherwise</span>
+                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                          Siloed Broker
+                        </span>
+                      </div>
+                      <div className="text-2xl font-black text-rose-400 tracking-tight">
+                        {formatRupee(modelSavings.withoutAeyTax)}
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-snug">
+                        Taxes calculated per broker in isolation. Zero cross-broker loss set-offs, un-grandfathered gains, and zero harvesting.
+                      </p>
+                    </div>
+
+                    {/* Column 2: Traditional CA */}
+                    <div className="p-4 rounded-xl bg-slate-800/80 border border-slate-700/80 space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">2. Traditional CA Audit</span>
+                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          + ₹3.5k Fee
+                        </span>
+                      </div>
+                      <div className="text-2xl font-black text-amber-300 tracking-tight">
+                        {formatRupee(modelSavings.caTaxAndFees)}
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-snug">
+                        Standard statutory set-off with ₹3,500 CA consultation fee. Zero round-trip friction-adjusted harvesting before 31-March.
+                      </p>
+                    </div>
+
+                    {/* Column 3: With AEY Engine */}
+                    <div className="p-4 rounded-xl bg-emerald-950/60 border border-emerald-500/40 space-y-2 relative overflow-hidden">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[11px] font-bold text-emerald-300 uppercase tracking-wider">3. With AEY Model</span>
+                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-[#00A37D] text-white shadow-sm">
+                          Our Model
+                        </span>
+                      </div>
+                      <div className="text-2xl font-black text-emerald-400 tracking-tight">
+                        {formatRupee(modelSavings.aeyFinalNetOutflow)}
+                      </div>
+                      <p className="text-[11px] text-emerald-200/80 leading-snug">
+                        Instant cross-broker set-off + automated Section 112A pre-2018 grandfathering + friction-netted tax harvesting.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Net Savings Highlight Strip */}
+                  <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span className="text-slate-300">
+                        Net Tax Saved with AEY: <strong className="text-emerald-300 font-extrabold text-sm">{formatRupee(modelSavings.netSavedVsBaseline)}</strong> ({modelSavings.pctSavedVsBaseline.toFixed(1)}% total tax reduction)
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold text-slate-300">
+                      {modelSavings.breakdown.crossBrokerSetoff > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700">
+                          Cross Set-Off: +{formatRupee(modelSavings.breakdown.crossBrokerSetoff)}
+                        </span>
+                      )}
+                      {modelSavings.breakdown.grandfathering > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700">
+                          Grandfathering: +{formatRupee(modelSavings.breakdown.grandfathering)}
+                        </span>
+                      )}
+                      {modelSavings.breakdown.lossHarvesting > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700">
+                          Harvesting: +{formatRupee(modelSavings.breakdown.lossHarvesting)}
+                        </span>
+                      )}
+                      <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700">
+                        CA Fee Avoided: +₹3,500
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
                 {/* KPI Cards Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
                   
@@ -629,6 +815,58 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+
+                {/* Crypto / VDA Section 115BBH Compliance Card */}
+                {taxResult.hasCrypto && (
+                  <div className="p-6 rounded-2xl bg-gradient-to-r from-amber-950/40 via-purple-950/30 to-slate-900 border border-amber-500/40 shadow-xl space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center font-black text-lg">
+                          🪙
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-sm font-extrabold text-white">Virtual Digital Assets (Schedule VDA - Sec 115BBH)</h4>
+                            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                              Statutory Isolation Active
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-300 mt-0.5">
+                            Segregates crypto from equity: Flat 30% tax + 4% cess on profitable transfers. Blocks illegal crypto loss netting to safeguard against Sec 143(1)(a) defect notices.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="text-right bg-slate-900/80 px-3.5 py-2 rounded-xl border border-slate-800">
+                        <span className="text-[10px] text-slate-400 block font-bold uppercase tracking-wider">Sec 194S TDS Claimed</span>
+                        <span className="text-sm font-black text-emerald-400">-{formatRupee(taxResult.cryptoTdsCredits)}</span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+                      <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Gross VDA Gains</span>
+                        <span className="text-lg font-black text-emerald-400 mt-1 block">{formatRupee(taxResult.grossCryptoGains)}</span>
+                        <span className="text-[10px] text-slate-400 block mt-0.5">BTC & SOL realized gains</span>
+                      </div>
+                      <div className="p-3.5 rounded-xl bg-slate-900/90 border border-amber-900/50">
+                        <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider block">Disallowed VDA Loss</span>
+                        <span className="text-lg font-black text-amber-300 mt-1 block">{formatRupee(taxResult.cryptoLossDisallowed)}</span>
+                        <span className="text-[10px] text-amber-500/80 block mt-0.5">ETH loss (Barred Sec 115BBH(2))</span>
+                      </div>
+                      <div className="p-3.5 rounded-xl bg-slate-900/90 border border-purple-900/50">
+                        <span className="text-[10px] text-purple-300 font-bold uppercase tracking-wider block">Sec 270A Penalty Shield</span>
+                        <span className="text-lg font-black text-purple-300 mt-1 block">{formatRupee(taxResult.cryptoPenaltyRiskAverted)}</span>
+                        <span className="text-[10px] text-purple-400/80 block mt-0.5">200% under-reporting averted</span>
+                      </div>
+                      <div className="p-3.5 rounded-xl bg-slate-900/90 border border-rose-900/50">
+                        <span className="text-[10px] text-rose-400 font-bold uppercase tracking-wider block">Net Crypto Tax Payable</span>
+                        <span className="text-lg font-black text-rose-400 mt-1 block">{formatRupee(taxResult.cryptoNetPayable)}</span>
+                        <span className="text-[10px] text-slate-400 block mt-0.5">31.2% less TDS credit</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Capital Gains Breakdown */}
                 <div className="apple-card p-6 space-y-4">
@@ -1010,6 +1248,486 @@ export default function App() {
             )}
 
             {/* ------------------------------------------------------------- */}
+            {/* TAB: MODEL SAVINGS & PANELIST BENCHMARK SUITE */}
+            {/* ------------------------------------------------------------- */}
+            {navSection === "benchmark" && (
+              <div className="space-y-8">
+                
+                {/* Success Toast */}
+                {savingsSuccessMsg && (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-xs text-emerald-950 flex items-center justify-between shadow-sm animate-fade-in">
+                    <div className="flex items-center gap-2.5 font-bold text-emerald-800">
+                      <CheckCircle2 className="w-5 h-5 text-[#00A37D]" />
+                      <span>{savingsSuccessMsg}</span>
+                    </div>
+                    <button onClick={() => setSavingsSuccessMsg(null)} className="text-emerald-600 hover:text-emerald-900 font-bold">
+                      ✕
+                    </button>
+                  </div>
+                )}
+
+                {/* Benchmark Hero Header with 1-Click Panelist Suite */}
+                <div className="apple-card p-6 sm:p-8 bg-gradient-to-br from-slate-900 via-slate-900 to-[#032e23] text-white rounded-3xl shadow-xl border border-emerald-900/50 space-y-6">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 border-b border-slate-800">
+                    <div className="space-y-2 max-w-2xl">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
+                          <Award className="w-3.5 h-3.5 text-[#00A37D]" /> Panelist & CA Evaluation Engine
+                        </span>
+                        <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                          Finance (No. 2) Act 2024
+                        </span>
+                      </div>
+                      <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                        AEY Model vs. Alternative Approaches
+                      </h2>
+                      <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-normal">
+                        See exactly how much tax an investor pays when filing through individual brokers or traditional CAs versus our automated client-side engine.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+                      <button
+                        onClick={loadPanelistDemoData}
+                        className="btn-aey px-4 py-3 rounded-2xl text-xs font-black shadow-lg flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition cursor-pointer"
+                        title="Loads multi-broker Zerodha + Groww + open holdings"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        <span>⚡ 1-Click Equity Multi-Broker</span>
+                      </button>
+
+                      <button
+                        onClick={loadMixedCryptoDemoData}
+                        className="px-4 py-3 rounded-2xl text-xs font-black shadow-lg flex items-center justify-center gap-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white hover:scale-[1.02] active:scale-[0.98] transition cursor-pointer border border-amber-400/40"
+                        title="Loads mixed Zerodha + Groww + CoinDCX crypto with BTC, ETH, SOL"
+                      >
+                        <span>🪙 1-Click Mixed Crypto + Equity</span>
+                      </button>
+
+                      <div className="relative group inline-block">
+                        <button className="w-full px-4 py-3 rounded-2xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center justify-center gap-2 transition">
+                          <Download className="w-4 h-4 text-[#00A37D]" />
+                          <span>Download Mock CSVs</span>
+                        </button>
+                        <div className="opacity-0 group-hover:opacity-100 transition-all duration-150 pointer-events-none group-hover:pointer-events-auto absolute right-0 mt-2 w-80 p-2 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl z-40 space-y-1">
+                          <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                            Ready-To-Upload Broker CSVs
+                          </div>
+                          {[
+                            { name: "Mixed Equity & Crypto Portfolio (Commingled)", file: "mixed_equity_crypto_portfolio.csv", tag: "Featured" },
+                            { name: "CoinDCX VDA Crypto Trades (Sec 115BBH)", file: "coindcx_crypto_fy24.csv", tag: "Crypto" },
+                            { name: "Zerodha P&L Trades (STCG + Grandfathered)", file: "zerodha_trades_fy24.csv", tag: "Equity" },
+                            { name: "Groww P&L Trades (STCL + Intraday)", file: "groww_trades_fy24.csv", tag: "Equity" },
+                            { name: "Open Portfolio Holdings (Harvest Candidates)", file: "open_holdings_harvesting.csv", tag: "Holdings" },
+                            { name: "Master Panelist Consolidated Demo", file: "master_panelist_demo.csv", tag: "Bundle" }
+                          ].map((item, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => handleDownloadMockCsv(item.file)}
+                              className="w-full text-left px-3 py-2 rounded-xl text-xs text-slate-200 hover:bg-slate-800 hover:text-emerald-300 transition flex items-center justify-between"
+                            >
+                              <div className="truncate pr-2">
+                                <span className="block truncate">{item.name}</span>
+                                <span className="text-[9px] text-slate-400 font-mono">{item.file}</span>
+                              </div>
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-emerald-400 font-bold shrink-0">{item.tag}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Scenario / Persona Switcher Tabs */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between text-xs text-slate-400 font-semibold">
+                      <span>Select Case Scenario to Evaluate:</span>
+                      <span className="text-[11px] text-emerald-400">Comparing Against Siloed & CA Baselines</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                      <button
+                        onClick={() => setSelectedPersonaId("live")}
+                        className={`p-3 rounded-2xl text-left border transition ${
+                          selectedPersonaId === "live"
+                            ? "bg-emerald-500/20 border-emerald-400 text-white shadow-sm"
+                            : "bg-slate-800/60 border-slate-700/80 text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                        }`}
+                      >
+                        <div className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-400 flex items-center gap-1">
+                          <Sparkles className="w-3 h-3" /> Active Data
+                        </div>
+                        <div className="text-xs font-bold text-white truncate mt-1">Live Portfolio</div>
+                        <div className="text-[10px] text-slate-400 mt-0.5 truncate">
+                          {modelSavings.pctSavedVsBaseline.toFixed(0)}% Tax Saved
+                        </div>
+                      </button>
+
+                      {BENCHMARK_PERSONAS.map(p => (
+                        <button
+                          key={p.id}
+                          onClick={() => setSelectedPersonaId(p.id)}
+                          className={`p-3 rounded-2xl text-left border transition ${
+                            selectedPersonaId === p.id
+                              ? "bg-emerald-500/20 border-emerald-400 text-white shadow-sm"
+                              : "bg-slate-800/60 border-slate-700/80 text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                          }`}
+                        >
+                          <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-300 truncate">
+                            {p.tag}
+                          </div>
+                          <div className="text-xs font-bold text-white truncate mt-1">{p.name}</div>
+                          <div className="text-[10px] text-emerald-400 mt-0.5 font-bold">
+                            {p.pctSaved.toFixed(0)}% Tax Saved
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Active Scenario Card Display */}
+                {(() => {
+                  const isLive = selectedPersonaId === "live";
+                  const pData = isLive ? null : BENCHMARK_PERSONAS.find(p => p.id === selectedPersonaId);
+                  
+                  const baselineTax = isLive ? modelSavings.withoutAeyTax : pData.baselineTax;
+                  const caTotal = isLive ? modelSavings.caTaxAndFees : pData.caTaxAndFees;
+                  const aeyPreTax = isLive ? modelSavings.aeyPreHarvestTax : pData.aeyPreHarvestTax;
+                  const harvestSaved = isLive ? modelSavings.aeyHarvestingSavings : pData.harvestBenefit;
+                  const aeyFinalOutflow = isLive ? modelSavings.aeyFinalNetOutflow : pData.aeyFinalOutflow;
+                  const savedVsBaseline = isLive ? modelSavings.netSavedVsBaseline : pData.netSavedVsBaseline;
+                  const savedVsCA = isLive ? modelSavings.netSavedVsCA : pData.netSavedVsCA;
+                  const pctSaved = isLive ? modelSavings.pctSavedVsBaseline : pData.pctSaved;
+                  const scenarioDesc = isLive 
+                    ? `Live consolidated calculation across ${activeFilesList.length} statements (${activeTrades.length} trades, ${activePositions.length} open positions).`
+                    : pData.description;
+                  const takeaway = isLive
+                    ? `You are saving ${formatRupee(savedVsBaseline)} (${pctSaved.toFixed(1)}%) with AEY compared to paying taxes on each broker's siloed download.`
+                    : pData.keyTakeaway;
+
+                  return (
+                    <div className="space-y-6">
+                      
+                      {/* Scenario Summary Banner */}
+                      <div className="apple-card p-6 border-l-4 border-l-[#00A37D] flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold text-[#00A37D] uppercase tracking-wider">
+                            {isLive ? "Live Portfolio Evaluation" : pData.tag}
+                          </span>
+                          <h3 className="text-base font-extrabold text-slate-900">
+                            {isLive ? "Current Consolidated Portfolio Analysis" : pData.name}
+                          </h3>
+                          <p className="text-xs text-slate-600 font-medium max-w-3xl">
+                            {scenarioDesc}
+                          </p>
+                        </div>
+
+                        <div className="bg-[#E6F6F2] border border-[#A3E4D4] rounded-2xl p-4 text-center shrink-0 min-w-[200px]">
+                          <span className="text-[10px] font-extrabold text-[#00A37D] uppercase tracking-wider block">Net Tax Saved With AEY</span>
+                          <span className="text-2xl font-black text-[#00A37D] block mt-0.5">{formatRupee(savedVsBaseline)}</span>
+                          <span className="text-[11px] font-bold text-emerald-800 block mt-0.5">🔥 {pctSaved.toFixed(1)}% Total Tax Reduction</span>
+                        </div>
+                      </div>
+
+                      {/* 4-Way Head-to-Head Cards */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        
+                        {/* 1. Siloed Baseline */}
+                        <div className="apple-card p-5 border-slate-200/90 flex flex-col justify-between space-y-4">
+                          <div>
+                            <div className="flex justify-between items-center mb-2">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Approach 1</span>
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                Siloed Baseline
+                              </span>
+                            </div>
+                            <h4 className="font-extrabold text-slate-900 text-sm">Paying Otherwise</h4>
+                            <p className="text-[11px] text-slate-500 mt-1">Separate broker P&L downloads without cross-broker set-off</p>
+                            
+                            <div className="text-2xl font-black text-rose-600 mt-4 tracking-tight">
+                              {formatRupee(baselineTax)}
+                            </div>
+                          </div>
+
+                          <div className="pt-3 border-t border-slate-100 text-[11px] text-slate-500 space-y-1">
+                            <div className="flex justify-between">
+                              <span>Cross Set-off:</span>
+                              <strong className="text-rose-600 font-bold">None (Trapped)</strong>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Grandfathering:</span>
+                              <strong className="text-rose-600 font-bold">Uncalculated</strong>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Tax Harvesting:</span>
+                              <strong className="text-slate-400 font-bold">₹0 (Zero)</strong>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 2. Traditional CA */}
+                        <div className="apple-card p-5 border-slate-200/90 flex flex-col justify-between space-y-4">
+                          <div>
+                            <div className="flex justify-between items-center mb-2">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Approach 2</span>
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                CA / Spreadsheet
+                              </span>
+                            </div>
+                            <h4 className="font-extrabold text-slate-900 text-sm">Traditional CA Audit</h4>
+                            <p className="text-[11px] text-slate-500 mt-1">Manual spreadsheet audit + ₹3,500 CA consultation fee</p>
+                            
+                            <div className="text-2xl font-black text-amber-600 mt-4 tracking-tight">
+                              {formatRupee(caTotal)}
+                            </div>
+                          </div>
+
+                          <div className="pt-3 border-t border-slate-100 text-[11px] text-slate-500 space-y-1">
+                            <div className="flex justify-between">
+                              <span>Set-off & Audit:</span>
+                              <strong className="text-slate-700 font-bold">Manual (2-5 days)</strong>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Professional Fee:</span>
+                              <strong className="text-amber-600 font-bold">₹3,500.00</strong>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Tax Harvesting:</span>
+                              <strong className="text-slate-400 font-bold">₹0 (None)</strong>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 3. AEY Pre-Harvest */}
+                        <div className="apple-card p-5 border-slate-200/90 flex flex-col justify-between space-y-4">
+                          <div>
+                            <div className="flex justify-between items-center mb-2">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Approach 4A</span>
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-[#00A37D] border border-[#A3E4D4]">
+                                Statutory Rules
+                              </span>
+                            </div>
+                            <h4 className="font-extrabold text-slate-900 text-sm">AEY Consolidated</h4>
+                            <p className="text-[11px] text-slate-500 mt-1">Sec 70/71 set-offs + Sec 112A pre-2018 grandfathering</p>
+                            
+                            <div className="text-2xl font-black text-slate-900 mt-4 tracking-tight">
+                              {formatRupee(aeyPreTax)}
+                            </div>
+                          </div>
+
+                          <div className="pt-3 border-t border-slate-100 text-[11px] text-slate-500 space-y-1">
+                            <div className="flex justify-between">
+                              <span>Finance Act 2024:</span>
+                              <strong className="text-[#00A37D] font-bold">Verified</strong>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Cross Set-off:</span>
+                              <strong className="text-[#00A37D] font-bold">Instant</strong>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Client-Side Privacy:</span>
+                              <strong className="text-[#00A37D] font-bold">100% Local</strong>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 4. AEY With Harvesting */}
+                        <div className="apple-card p-5 border-[#00A37D] bg-gradient-to-b from-[#F2FBF8] to-white flex flex-col justify-between space-y-4 shadow-md">
+                          <div>
+                            <div className="flex justify-between items-center mb-2">
+                              <span className="text-[10px] font-black text-[#00A37D] uppercase tracking-wider">Approach 4B</span>
+                              <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-[#00A37D] text-white">
+                                Full AEY Model
+                              </span>
+                            </div>
+                            <h4 className="font-extrabold text-slate-900 text-sm">With Tax Harvesting</h4>
+                            <p className="text-[11px] text-slate-500 mt-1">Net outflow after executing recommended harvesting</p>
+                            
+                            <div className="text-2xl font-black text-[#00A37D] mt-4 tracking-tight">
+                              {formatRupee(aeyFinalOutflow)}
+                            </div>
+                          </div>
+
+                          <div className="pt-3 border-emerald-100 text-[11px] text-slate-600 space-y-1">
+                            <div className="flex justify-between">
+                              <span>Harvest Benefit:</span>
+                              <strong className="text-[#00A37D] font-extrabold">+{formatRupee(harvestSaved)}</strong>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Saved vs Siloed:</span>
+                              <strong className="text-[#00A37D] font-extrabold">{formatRupee(savedVsBaseline)}</strong>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Saved vs CA:</span>
+                              <strong className="text-[#00A37D] font-extrabold">{formatRupee(savedVsCA)}</strong>
+                            </div>
+                          </div>
+                        </div>
+
+                      </div>
+
+                      {/* Statutory Mechanism Explanation Box */}
+                      <div className="p-5 rounded-2xl bg-white border border-slate-200/90 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Info className="w-4 h-4 text-[#00A37D]" />
+                          <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Statutory Tax Mechanism in this Scenario</h4>
+                        </div>
+                        <p className="text-xs text-slate-700 leading-relaxed font-medium">
+                          {takeaway}
+                        </p>
+                      </div>
+
+                      {/* Detailed Statutory Comparison Table */}
+                      <div className="apple-card p-6 space-y-4">
+                        <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+                          <div>
+                            <h4 className="font-bold text-sm text-slate-900">Comprehensive Architecture & Feature Comparison Matrix</h4>
+                            <p className="text-xs text-slate-500">Benchmark against Naive Broker, Traditional CA, Legacy Portals, and AEY Engine</p>
+                          </div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-100 px-2.5 py-1 rounded-full">
+                            Finance (No. 2) Act 2024
+                          </span>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs border-collapse">
+                            <thead>
+                              <tr className="border-b border-slate-200 text-slate-400 uppercase font-bold text-[10px] tracking-wider">
+                                <th className="py-3 px-3">Evaluation Metric</th>
+                                <th className="py-3 px-3 text-rose-700">Approach 1: Siloed Broker</th>
+                                <th className="py-3 px-3 text-amber-700">Approach 2: Traditional CA</th>
+                                <th className="py-3 px-3 text-slate-600">Approach 3: Legacy FinTech</th>
+                                <th className="py-3 px-3 text-[#00A37D] font-black">Approach 4: AEY Engine</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                              <tr>
+                                <td className="py-3 px-3 font-bold text-slate-900">STCG Tax Rate (Sec 111A)</td>
+                                <td className="py-3 px-3 text-slate-600">20% (Isolated)</td>
+                                <td className="py-3 px-3 text-slate-600">20% (Manual)</td>
+                                <td className="py-3 px-3 text-rose-600 font-bold">15% (Outdated Pre-2024)</td>
+                                <td className="py-3 px-3 text-[#00A37D] font-extrabold">20% Flat (Verified)</td>
+                              </tr>
+                              <tr>
+                                <td className="py-3 px-3 font-bold text-slate-900">LTCG Tax Rate (Sec 112A)</td>
+                                <td className="py-3 px-3 text-slate-600">12.5% (Per-Broker Exemption)</td>
+                                <td className="py-3 px-3 text-slate-600">12.5% (&gt; ₹1.25L)</td>
+                                <td className="py-3 px-3 text-rose-600 font-bold">10% (&gt; ₹1L Outdated)</td>
+                                <td className="py-3 px-3 text-[#00A37D] font-extrabold">12.5% (&gt; ₹1.25L Verified)</td>
+                              </tr>
+                              <tr>
+                                <td className="py-3 px-3 font-bold text-slate-900">Pre-2018 Grandfathering</td>
+                                <td className="py-3 px-3 text-rose-600">Ignored (FIFO buy price)</td>
+                                <td className="py-3 px-3 text-slate-700">Manual / Spreadsheet</td>
+                                <td className="py-3 px-3 text-slate-500">Partial / Missing FMV</td>
+                                <td className="py-3 px-3 text-[#00A37D] font-extrabold">Automated 31-Jan-2018 FMV</td>
+                              </tr>
+                              <tr>
+                                <td className="py-3 px-3 font-bold text-slate-900">Multi-Broker Loss Set-Off</td>
+                                <td className="py-3 px-3 text-rose-600 font-bold">None (Losses trapped)</td>
+                                <td className="py-3 px-3 text-slate-700">Manual Cross Set-Off</td>
+                                <td className="py-3 px-3 text-slate-500">Manual Uploads</td>
+                                <td className="py-3 px-3 text-[#00A37D] font-extrabold">Instant Multi-Broker Consolidation</td>
+                              </tr>
+                              <tr>
+                                <td className="py-3 px-3 font-bold text-slate-900">Virtual Digital Assets (Crypto / VDA)</td>
+                                <td className="py-3 px-3 text-rose-600 font-bold">Unsupported (Equity only)</td>
+                                <td className="py-3 px-3 text-rose-600">Risky manual netting (Triggers Sec 143(1)(a) defect & 200% penalty)</td>
+                                <td className="py-3 px-3 text-rose-600">Crashes on mixed broker CSVs</td>
+                                <td className="py-3 px-3 text-[#00A37D] font-extrabold">Schedule VDA Isolated + 31.2% Flat Tax + Sec 194S TDS Credit</td>
+                              </tr>
+                              <tr>
+                                <td className="py-3 px-3 font-bold text-slate-900">Tax-Loss Harvesting Engine</td>
+                                <td className="py-3 px-3 text-slate-400">None</td>
+                                <td className="py-3 px-3 text-slate-400">None (Filed after year-end)</td>
+                                <td className="py-3 px-3 text-slate-400">None</td>
+                                <td className="py-3 px-3 text-[#00A37D] font-extrabold">Friction-Adjusted (STT/GST netted)</td>
+                              </tr>
+                              <tr>
+                                <td className="py-3 px-3 font-bold text-slate-900">LTCG Exemption Step-Up</td>
+                                <td className="py-3 px-3 text-slate-400">Unused Headroom Lost</td>
+                                <td className="py-3 px-3 text-slate-400">None</td>
+                                <td className="py-3 px-3 text-slate-400">None</td>
+                                <td className="py-3 px-3 text-[#00A37D] font-extrabold">Algorithmic Cost Step-Up (0% Tax)</td>
+                              </tr>
+                              <tr>
+                                <td className="py-3 px-3 font-bold text-slate-900">Client-Side Privacy</td>
+                                <td className="py-3 px-3 text-slate-600">Broker Server</td>
+                                <td className="py-3 px-3 text-slate-600">Email / Unencrypted PDF</td>
+                                <td className="py-3 px-3 text-rose-600">Remote Cloud Server</td>
+                                <td className="py-3 px-3 text-[#00A37D] font-extrabold">100% In-Browser (Zero Cloud)</td>
+                              </tr>
+                              <tr>
+                                <td className="py-3 px-3 font-bold text-slate-900">Advisory Fee</td>
+                                <td className="py-3 px-3 text-slate-700">₹0</td>
+                                <td className="py-3 px-3 text-amber-700 font-bold">₹3,000 to ₹15,000</td>
+                                <td className="py-3 px-3 text-slate-700">₹500 to ₹2,500</td>
+                                <td className="py-3 px-3 text-[#00A37D] font-extrabold">₹0 (Free / Open Model)</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* Visual Infographic Banner */}
+                      <div className="apple-card p-6 bg-slate-900 border border-slate-800 rounded-3xl space-y-4 text-white">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                          <div>
+                            <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-400 block">Executive Infographic</span>
+                            <h4 className="font-black text-base text-white">Efficiency & Statutory Benchmark Comparison</h4>
+                          </div>
+                          <a
+                            href="/model_comparison_table.jpg"
+                            download="AEY_Model_Comparison_Benchmark.jpg"
+                            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 border border-slate-700 transition"
+                          >
+                            <Download className="w-3.5 h-3.5 text-[#00A37D]" /> Download High-Res Infographic
+                          </a>
+                        </div>
+                        <div className="rounded-2xl overflow-hidden border border-slate-800 bg-slate-950/60 flex justify-center">
+                          <img
+                            src="/model_comparison_table.jpg"
+                            alt="AEY Engine vs Market Alternatives: Statutory Tax & Efficiency Benchmark"
+                            className="w-full h-auto object-contain rounded-2xl shadow-xl"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Panelist Testing Guide & CSV Sandbox */}
+                      <div className="apple-card p-6 bg-slate-50 border border-slate-200/90 space-y-4">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="w-5 h-5 text-[#00A37D]" />
+                          <h4 className="font-bold text-sm text-slate-900">Panelist Quick-Test Walkthrough</h4>
+                        </div>
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                          To demonstrate the engine in real time to jury members or Chartered Accountants:
+                        </p>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                          <div className="p-3.5 bg-white rounded-xl border border-slate-200 space-y-1">
+                            <strong className="font-bold text-slate-900 block">Step 1: Get Mock Statements</strong>
+                            <p className="text-slate-500 text-[11px]">Click "Download Mock CSVs" or tap "1-Click Load Panelist Demo" above.</p>
+                          </div>
+                          <div className="p-3.5 bg-white rounded-xl border border-slate-200 space-y-1">
+                            <strong className="font-bold text-slate-900 block">Step 2: Check Cross-Broker Offsets</strong>
+                            <p className="text-slate-500 text-[11px]">Notice Groww's ₹26,000 STCL automatically absorbing Zerodha's STCG under Sec 70.</p>
+                          </div>
+                          <div className="p-3.5 bg-white rounded-xl border border-slate-200 space-y-1">
+                            <strong className="font-bold text-slate-900 block">Step 3: Check Tax Harvesting</strong>
+                            <p className="text-slate-500 text-[11px]">Navigate to the "Tax Harvesting" tab to see algorithmic sell recommendations for HDFC Bank & Airtel.</p>
+                          </div>
+                        </div>
+                      </div>
+
+                    </div>
+                  );
+                })()}
+
+              </div>
+            )}
+
+            {/* ------------------------------------------------------------- */}
             {/* TAB 4: TRADE LEVEL AUDIT TRAIL */}
             {/* ------------------------------------------------------------- */}
             {navSection === "audit" && (
@@ -1031,12 +1749,12 @@ export default function App() {
                     </div>
 
                     <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold">
-                      {["ALL", "STCG", "LTCG", "INTRADAY"].map(type => (
+                      {["ALL", "STCG", "LTCG", "INTRADAY", "CRYPTO"].map(type => (
                         <button 
                           key={type} onClick={() => setFilterType(type)}
                           className={`px-3 py-1 rounded-lg transition ${filterType === type ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"}`}
                         >
-                          {type}
+                          {type === "CRYPTO" ? "🪙 VDA / Crypto" : type}
                         </button>
                       ))}
                     </div>
@@ -1073,6 +1791,7 @@ export default function App() {
                           <td className="py-3.5 px-4 font-mono text-[11px] text-slate-400">{item.isin}</td>
                           <td className="py-3.5 px-4">
                             <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${
+                              item.is_crypto || item.classified_type.includes("VDA") ? "bg-amber-100 text-amber-900 border border-amber-300" :
                               item.classified_type === "STCG" ? "bg-slate-100 text-slate-800 border border-slate-200" :
                               item.classified_type === "LTCG" ? "bg-[#E6F6F2] text-[#00A37D] border border-[#A3E4D4]" :
                               "bg-purple-50 text-purple-700 border border-purple-100"

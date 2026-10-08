@@ -1,0 +1,9 @@
+{
+  "name": "aey1-root",
+  "private": true,
+  "scripts": {
+    "dev": "cd web_ui && bun run dev",
+    "build": "cd web_ui && bun run build",
+    "preview": "cd web_ui && bun run preview"
+  }
+}
